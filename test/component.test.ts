@@ -73,7 +73,7 @@ class Three extends Component<string, Record<string, boolean>> {
 }
 
 class FailingTwo extends Two {
-  run(_value: number) {
+  run() {
     throw new Error('Component failed');
   }
 }

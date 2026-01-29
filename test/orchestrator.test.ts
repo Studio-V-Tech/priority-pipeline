@@ -203,7 +203,7 @@ test('orchestrator succeeds with an async component', async () => {
 test('orchestrator throws when async component fails', async () => {
   const orchestrator = new Orchestrator(
     oneFactory(),
-    { ...twoFactory(), run: async function (value: number) { throw new Error('Component failed'); } },
+    { ...twoFactory(), run: async function () { throw new Error('Component failed'); } },
     threeFactory(),
   );
 
