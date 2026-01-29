@@ -12,6 +12,7 @@ export class Orchestrator<
 
   private components: Chainable<T>;
   private hasStarted = false;
+  private componentError: { component: ComponentInterface<any, any>, error: unknown } | undefined;
 
   constructor(...components: Chainable<T>) {
     if (components.length === 0) {
@@ -23,7 +24,7 @@ export class Orchestrator<
 
   public async run(input?: In<First<T>>): Promise<Out<Last<T>>> {
     if (this.hasStarted) {
-      throw new PipelineError('PIPELINE_STARTED_TWICE', 'Pipeline has already been started');
+      throw new PipelineError('PIPELINE_STARTED_TWICE');
     }
 
     this.hasStarted = true;
@@ -32,25 +33,23 @@ export class Orchestrator<
 
     const tieredComponents = priorities.map((p) => ({
       components: this.components.filter(c => c.priority === p),
-      anyCouldRun: this.components.some(c => c === this.components[0]) // First component in pipeline must run first
+      anyCouldRun: this.components.some(c => c === this.firstComponent) // First component in pipeline must run first
     }));
 
-    this.tryRunComponent(this.components[0], input);
+    this.tryRunComponent(this.firstComponent, input);
 
     while (true) {
       let anyUpperTierCouldRun = false;
 
       outerLoop: for (const compsInTier of tieredComponents) {
         for (const component of compsInTier.components) {
+          if (this.componentError) await this.handleError(this.componentError.component, this.componentError.error);
+
+          if (this.getDone(component) && this.isLast(component)) return component.give();
+
           if (anyUpperTierCouldRun) break outerLoop;
 
-          if (component.isDone({ upstreamDone: this.getUpstreamDone(component) })) {
-            await this.validateComponentDone(component);
-
-            if (this.isLast(component)) return component.give();
-          }
-
-          const canRun = component.canRun();
+          const canRun = component.canRun({ upstreamCanGive: this.getUpstream(component)?.canGive() ?? true });
           compsInTier.anyCouldRun = compsInTier.anyCouldRun || canRun;
 
           if (canRun) {
@@ -66,71 +65,57 @@ export class Orchestrator<
     }
   }
 
-  private getUpstreamDone(component: ComponentInterface<any, any>): boolean {
-    for (let upComp = this.components[0]; upComp !== component; upComp = this.getDownstream(upComp)) {
-      if (!upComp.isDone({ upstreamDone: false })) return false;
+  private getDone(component: ComponentInterface<any, any>): boolean {
+    for (let comp: ComponentInterface<any, any> | undefined = this.firstComponent; (comp ? this.getIndex(comp) : Infinity) <= this.getIndex(component); comp = this.getDownstream(comp!)) {
+      if (!comp!.isDone({ upstreamDone: true, upstreamCanGive: this.getUpstream(comp!)?.canGive() ?? true })) return false;
     }
 
     return true;
   }
 
-  private async tryRunComponent(component: ComponentInterface<any, any>, input?: In<First<T>>): Promise<void> {
+  private tryRunComponent(component: ComponentInterface<any, any>, input?: In<First<T>>) {
     const upstreamComponent = this.getUpstream(component);
 
     try {
       const maybePromise = component.run(input ?? upstreamComponent?.give(), {
-        upstreamDone: this.getUpstreamDone(component),
+        upstreamDone: upstreamComponent ? this.getDone(upstreamComponent) : true,
       });
+
       if (maybePromise instanceof Promise) {
-        maybePromise.catch((error) => handleError(error, this));
+        maybePromise.catch((error) => this.componentError = { component, error });
       }
     } catch (error) {
-      handleError(error, this);
-    }
-
-    async function handleError(error: unknown, that: Orchestrator<T>) {
-      const pipelineError = new PipelineError('COMPONENT_FAILED', 'Component failed', {
-        cause: error,
-        details: {
-          componentIndex: that.getIndex(component),
-        }
-      });
-
-      await Promise.all(that.components.map(c => c.onPipelineError?.(pipelineError)));
-      throw pipelineError;
+      this.componentError = { component, error };
     }
   }
 
-  private async validateComponentDone(component: ComponentInterface<any, any>) {
-    for (let upComp = this.getUpstream(component); Boolean(upComp); upComp = this.getUpstream(upComp)) {
-      if (!upComp.isDone({ upstreamDone: this.getUpstreamDone(upComp) })) {
-        const error = new PipelineError(
-          'COMPONENT_DONE_AHEAD_OF_UPSTREAM',
-          'Component is done ahead of upstream',
-          {
-            details: {
-              componentIndex: this.getIndex(component),
-              upstreamComponentIndex: this.getIndex(upComp),
-            }
-          }
-        );
-
-        await Promise.all(this.components.map(c => c.onPipelineError?.(error)));
-        throw error;
+  private async handleError(component: ComponentInterface<any, any>, error: unknown) {
+    const pipelineError = new PipelineError('COMPONENT_FAILED', {
+      cause: error,
+      details: {
+        componentIndex: this.getIndex(component),
       }
-    }
+    });
+
+    await Promise.all(this.components.map(c => c.onPipelineError?.(pipelineError)));
+
+    throw pipelineError;
   }
 
-  private getUpstream(component: ComponentInterface<any, any>) {
+  private getUpstream(component: ComponentInterface<any, any>): ComponentInterface<any, any> | undefined {
     return this.components[this.getIndex(component) - 1];
   }
 
-  private getDownstream(component: ComponentInterface<any, any>) {
+  private getDownstream(component: ComponentInterface<any, any>): ComponentInterface<any, any> | undefined {
     return this.components[this.getIndex(component) + 1];
   }
 
   private isLast(component: ComponentInterface<any, any>) {
     return this.getIndex(component) === this.components.length - 1;
+  }
+
+  private get firstComponent() {
+    return this.components[0];
   }
 
   private getIndex(component: ComponentInterface<any, any>) {

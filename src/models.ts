@@ -1,15 +1,25 @@
 import { PipelineError } from "./error";
 
-export interface ComponentContext {
-  upstreamDone: boolean;
-}
-
 export interface ComponentInterface<I, O> {
   priority: number;
-  canRun(): boolean;
-  run(input: I, ctx: ComponentContext): void | Promise<void>;
+
+  canRun(ctx: {
+    upstreamCanGive: boolean;
+  }): boolean;
+
+  run(input: I, ctx: {
+    upstreamDone: boolean;
+  }): void | Promise<void>;
+
+  canGive(): boolean;
+
   give(): O | undefined;
-  isDone(ctx: ComponentContext): boolean;
+
+  isDone(ctx: {
+    upstreamDone: boolean;
+    upstreamCanGive: boolean;
+  }): boolean;
+
   onPipelineError?(error: PipelineError): void;
 }
 
@@ -28,7 +38,7 @@ export type Chainable<T extends readonly ComponentInterface<any, any>[]> =
     infer C2 extends ComponentInterface<any, any>,
     ...infer Rest extends readonly ComponentInterface<any, any>[]
   ]
-    ? Out<C1> extends In<C2>
-      ? readonly [C1, ...Chainable<readonly [C2, ...Rest]>]
-      : never
-    : T;
+  ? Out<C1> extends In<C2>
+  ? readonly [C1, ...Chainable<readonly [C2, ...Rest]>]
+  : never
+  : T;
