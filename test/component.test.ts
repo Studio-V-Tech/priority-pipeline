@@ -73,7 +73,35 @@ class Three extends Component<string, Record<string, boolean>> {
 }
 
 class FailingTwo extends Two {
-  run(value: number) {
+  run(_value: number) {
+    throw new Error('Component failed');
+  }
+}
+
+class AsyncTwo extends Component<number, string> {
+  constructor({ priority }: { priority?: number } = {}) {
+    super({
+      priority,
+    });
+  }
+
+  canRun({ upstreamCanGive }: { upstreamCanGive: boolean }) {
+    return upstreamCanGive;
+  }
+
+  isDone({ upstreamDone, upstreamCanGive }: { upstreamDone: boolean, upstreamCanGive: boolean }) {
+    return upstreamDone && !upstreamCanGive;
+  }
+
+  async run(value: number) {
+    await new Promise(resolve => setTimeout(resolve, 1));
+    this.queue.push(value.toString());
+  }
+}
+
+class FailingAsyncTwo extends Two {
+  async run(_value: number) {
+    await new Promise(resolve => setTimeout(resolve, 1));
     throw new Error('Component failed');
   }
 }
@@ -201,4 +229,26 @@ test('orchestrator throws when run for a second time even if first time complete
   await orchestrator.run();
 
   await expect(async () => { await orchestrator.run() }).rejects.toThrowError('PIPELINE_STARTED_TWICE');
+});
+
+test('orchestrator succeeds with an async component', async () => {
+  const orchestrator = new Orchestrator(new One(), new AsyncTwo(), new Three());
+
+  const result = await orchestrator.run();
+
+  expect(result['0']).toBe(false);
+  expect(result['1']).toBe(false);
+  expect(result['2']).toBe(false);
+  expect(result['3']).toBe(true);
+  expect(result['4']).toBe(undefined);
+});
+
+test('orchestrator throws when async component fails', async () => {
+  const orchestrator = new Orchestrator(
+    new One(),
+    new FailingAsyncTwo(),
+    new Three(),
+  );
+
+  await expect(async () => { await orchestrator.run() }).rejects.toThrowError('COMPONENT_FAILED');
 });

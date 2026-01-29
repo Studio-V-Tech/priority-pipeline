@@ -177,3 +177,35 @@ test('orchestrator throws when run for a second time even if first time complete
 
   await expect(async () => { await orchestrator.run() }).rejects.toThrowError('PIPELINE_STARTED_TWICE');
 });
+
+test('orchestrator succeeds with an async component', async () => {
+  const orchestrator = new Orchestrator(
+    oneFactory(),
+    { 
+      ...twoFactory(),
+      run: async function (value: number) {
+        await new Promise(resolve => setTimeout(resolve, 1));
+        this.queue.push(value.toString());
+      },
+    },
+    threeFactory(),
+  );
+
+  const result = await orchestrator.run();
+
+  expect(result['0']).toBe(false);
+  expect(result['1']).toBe(false);
+  expect(result['2']).toBe(false);
+  expect(result['3']).toBe(true);
+  expect(result['4']).toBe(undefined);
+});
+
+test('orchestrator throws when async component fails', async () => {
+  const orchestrator = new Orchestrator(
+    oneFactory(),
+    { ...twoFactory(), run: async function (value: number) { throw new Error('Component failed'); } },
+    threeFactory(),
+  );
+
+  await expect(async () => { await orchestrator.run() }).rejects.toThrowError('COMPONENT_FAILED');
+});
