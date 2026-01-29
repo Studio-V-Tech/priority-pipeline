@@ -1,26 +1,26 @@
 import { PipelineError } from "./error";
 
 export interface ComponentInterface<I, O> {
-  priority: number;
+  readonly priority: number;
 
-  canRun(ctx: {
+  readonly canRun: (ctx: {
     upstreamCanGive: boolean;
-  }): boolean;
+  }) => boolean;
 
-  run(input: I, ctx: {
+  readonly run: (input: I, ctx: {
     upstreamDone: boolean;
-  }): void | Promise<void>;
+  }) => void | Promise<void>;
 
-  canGive(): boolean;
+  readonly canGive: () => boolean;
 
-  give(): O | undefined;
+  readonly give: () => O;
 
-  isDone(ctx: {
+  readonly isDone: (ctx: {
     upstreamDone: boolean;
     upstreamCanGive: boolean;
-  }): boolean;
+  }) => boolean;
 
-  onPipelineError?(error: PipelineError): void;
+  readonly onPipelineError?: (error: PipelineError) => void;
 }
 
 export type In<C> = C extends ComponentInterface<infer I, any> ? I : never;

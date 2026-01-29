@@ -1,6 +1,7 @@
 export type PipelineErrorCode =
   | "PIPELINE_STARTED_TWICE"
   | "COMPONENT_FAILED"
+  | "COMPONENT_DONE_WITH_NOTHING_TO_GIVE";
 
 export class PipelineError extends Error {
   readonly code: PipelineErrorCode;
