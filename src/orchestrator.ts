@@ -1,28 +1,16 @@
 import { PipelineError } from "./error";
-import { ComponentInterface, Chainable, First, In, Last, Out } from "./models";
+import { ComponentInterface, Orchestrator, NonEmpty, AnyComp, ChainableAny, SoftStateCheck } from "./models";
 
-export class Orchestrator<
-  const T extends readonly ComponentInterface<any, any>[]
-> {
-  // Surface endpoint types for consumers
-  public _types = null as unknown as {
-    input: In<First<T>>;
-    output: Out<Last<T>>;
-  };
-
-  private components: Chainable<T>;
+class OrchestratorImpl<S, T extends NonEmpty<AnyComp<S>>> {
   private hasStarted = false;
-  private componentError: { component: ComponentInterface<any, any>, error: unknown } | undefined;
+  private componentError: { component: AnyComp<S>; error: unknown } | undefined;
 
-  constructor(...components: Chainable<T>) {
-    if (components.length === 0) {
-      throw new Error('Orchestrator must have at least one component');
-    }
+  constructor(
+    private readonly state: S,
+    private readonly components: T
+  ) { }
 
-    this.components = components;
-  }
-
-  public async run(input?: In<First<T>>): Promise<Out<Last<T>>> {
+  public async run(input?: T): Promise<T> {
     if (this.hasStarted) {
       throw new PipelineError('PIPELINE_STARTED_TWICE');
     }
@@ -49,7 +37,10 @@ export class Orchestrator<
 
           if (anyUpperTierCouldRun) break outerLoop;
 
-          const canRun = component.canRun({ upstreamCanGive: this.getUpstream(component)?.canGive() ?? true });
+          const canRun = component.canRun({
+            state: this.state,
+            upstreamCanGive: this.getUpstream(component)?.canGive() ?? true,
+          });
           compsInTier.anyCouldRun = compsInTier.anyCouldRun || canRun;
 
           if (canRun) {
@@ -65,19 +56,24 @@ export class Orchestrator<
     }
   }
 
-  private getDone(component: ComponentInterface<any, any>): boolean {
-    for (let comp: ComponentInterface<any, any> | undefined = this.firstComponent; (comp ? this.getIndex(comp) : Infinity) <= this.getIndex(component); comp = this.getDownstream(comp!)) {
-      if (!comp!.isDone({ upstreamDone: true, upstreamCanGive: this.getUpstream(comp!)?.canGive() ?? true })) return false;
+  private getDone(component: AnyComp<S>): boolean {
+    for (let comp: AnyComp<S> | undefined = this.firstComponent; (comp ? this.getIndex(comp) : Infinity) <= this.getIndex(component); comp = this.getDownstream(comp!)) {
+      if (!comp!.isDone({
+        state: this.state,
+        upstreamDone: true,
+        upstreamCanGive: this.getUpstream(comp!)?.canGive() ?? true,
+      })) return false;
     }
 
     return true;
   }
 
-  private tryRunComponent(component: ComponentInterface<any, any>, input?: In<First<T>>) {
+  private tryRunComponent(component: AnyComp<S>, input?: T) {
     const upstreamComponent = this.getUpstream(component);
 
     try {
       const maybePromise = component.run(input ?? upstreamComponent?.give(), {
+        state: this.state,
         upstreamDone: upstreamComponent ? this.getDone(upstreamComponent) : true,
       });
 
@@ -89,7 +85,7 @@ export class Orchestrator<
     }
   }
 
-  private async handleError(component: ComponentInterface<any, any>, error: unknown) {
+  private async handleError(component: AnyComp<S>, error: unknown) {
     const pipelineError = new PipelineError('COMPONENT_FAILED', {
       cause: error,
       details: {
@@ -97,20 +93,20 @@ export class Orchestrator<
       }
     });
 
-    await Promise.all(this.components.map(c => c.onPipelineError?.(pipelineError)));
+    await Promise.all(this.components.map(c => c.onPipelineError?.(pipelineError, { state: this.state })));
 
     throw pipelineError;
   }
 
-  private getUpstream(component: ComponentInterface<any, any>): ComponentInterface<any, any> | undefined {
+  private getUpstream(component: AnyComp<S>): AnyComp<S> | undefined {
     return this.components[this.getIndex(component) - 1];
   }
 
-  private getDownstream(component: ComponentInterface<any, any>): ComponentInterface<any, any> | undefined {
+  private getDownstream(component: AnyComp<S>): AnyComp<S> | undefined {
     return this.components[this.getIndex(component) + 1];
   }
 
-  private isLast(component: ComponentInterface<any, any>) {
+  private isLast(component: AnyComp<S>) {
     return this.getIndex(component) === this.components.length - 1;
   }
 
@@ -118,7 +114,25 @@ export class Orchestrator<
     return this.components[0];
   }
 
-  private getIndex(component: ComponentInterface<any, any>) {
+  private getIndex(component: AnyComp<S>) {
     return this.components.indexOf(component);
   }
+}
+
+export function createOrchestrator<
+  S,
+  const T extends readonly [
+    ComponentInterface<any, any, any>,
+    ...ComponentInterface<any, any, any>[]
+  ]
+>(
+  state: S,
+  ...components: T
+    & ChainableAny<T>
+    & SoftStateCheck<S, T>
+): Orchestrator<T> {
+  return new OrchestratorImpl<S, any>(
+    state,
+    components as any
+  ) as unknown as Orchestrator<T>;
 }

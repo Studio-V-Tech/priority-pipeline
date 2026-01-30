@@ -1,9 +1,9 @@
 import { expect, test } from 'vitest'
 
 import { Component } from "../src/component";
-import { Orchestrator } from "../src/orchestrator";
+import { createOrchestrator } from "../src/orchestrator";
 
-class One extends Component<undefined, number> {
+class One extends Component<undefined, number, null> {
   counter = 0;
 
   constructor({ priority }: { priority?: number } = {}) {
@@ -25,7 +25,7 @@ class One extends Component<undefined, number> {
   }
 }
 
-class Two extends Component<number, string> {
+class Two extends Component<number, string, undefined> {
   constructor({ priority }: { priority?: number } = {}) {
     super({
       priority,
@@ -45,7 +45,7 @@ class Two extends Component<number, string> {
   }
 }
 
-class Three extends Component<string, Record<string, boolean>> {
+class Three extends Component<string, Record<string, boolean>, undefined> {
   memory = {} as Record<string, boolean>;
 
   constructor({ priority }: { priority?: number } = {}) {
@@ -78,7 +78,7 @@ class FailingTwo extends Two {
   }
 }
 
-class AsyncTwo extends Component<number, string> {
+class AsyncTwo extends Component<number, string, undefined> {
   constructor({ priority }: { priority?: number } = {}) {
     super({
       priority,
@@ -106,8 +106,28 @@ class FailingAsyncTwo extends Two {
   }
 }
 
+class StateTypedTwo extends Component<number, string, { a: number }> {
+    constructor({ priority }: { priority?: number } = {}) {
+    super({
+      priority,
+    });
+  }
+
+  canRun({ upstreamCanGive, state }: { upstreamCanGive: boolean, state: { a: number } }) {
+    return upstreamCanGive && state.a === 42;
+  }
+
+  run(value: number) {
+    this.queue.push(value.toString());
+  }
+
+  isDone({ upstreamDone, upstreamCanGive }: { upstreamDone: boolean, upstreamCanGive: boolean }) {
+    return upstreamDone && !upstreamCanGive;
+  }
+}
+
 test('creates orchestrator', async () => {
-  const orchestrator = new Orchestrator(new One(), new Two(), new Three());
+  const orchestrator = createOrchestrator(null, new One(), new Two(), new Three());
   expect(orchestrator).toBeDefined();
 
   const result = await orchestrator.run();
@@ -122,16 +142,36 @@ test('creates orchestrator', async () => {
 
 test('creates orchestrator in wrong order (with type error)', () => {
   // @ts-expect-error If there were no type error in the next line, this line would fail linting as an unused directive
-  const orchestratorWrongOrder = new Orchestrator(new Two(), new One(), new Three());
+  const orchestratorWrongOrder = createOrchestrator(null, new Two(), new One(), new Three());
   expect(orchestratorWrongOrder).toBeDefined();
 
   // @ts-expect-error If there were no type error in the next line, this line would fail linting as an unused directive
-  const orchestratorWrongOrder2 = new Orchestrator(new Three(), new Two(), new One());
-  expect(orchestratorWrongOrder).toBeDefined();
+  const orchestratorWrongOrder2 = createOrchestrator(undefined, new Three(), new Two(), new One());
+  expect(orchestratorWrongOrder2).toBeDefined();
+});
+
+test('creates orchestrator with state type', async () => {
+  const orchestratorStateType = createOrchestrator({ a: 42 }, new One(), new StateTypedTwo(), new Three());
+  expect(orchestratorStateType).toBeDefined();
+
+  const result = await orchestratorStateType.run(undefined);
+
+  expect(result).toBeDefined();
+  expect(result['0']).toBe(false);
+  expect(result['1']).toBe(false);
+  expect(result['2']).toBe(false);
+  expect(result['3']).toBe(true);
+  expect(result['4']).toBe(undefined);
+});
+
+test('creates orchestrator with mismatching state type (with type error)', () => {
+  // @ts-expect-error If there were no type error in the next line, this line would fail linting as an unused directive
+  const orchestratorWrongStateType = createOrchestrator({ a: '42' }, new One(), new StateTypedTwo(), new Three());
+  expect(orchestratorWrongStateType).toBeDefined();
 });
 
 test('orchestrator succeeds with same priorities', async () => {
-  const orchestrator = new Orchestrator(new One(), new Two(), new Three());
+  const orchestrator = createOrchestrator(null, new One(), new Two(), new Three());
   expect(orchestrator).toBeDefined();
 
   const result = await orchestrator.run();
@@ -144,7 +184,7 @@ test('orchestrator succeeds with same priorities', async () => {
 });
 
 test('orchestrator succeeds with increasing priorities', async () => {
-  const orchestrator = new Orchestrator(
+  const orchestrator = createOrchestrator(null,
     new One({ priority: 1 }),
     new Two({ priority: 2 }),
     new Three({ priority: 3 }),
@@ -160,7 +200,7 @@ test('orchestrator succeeds with increasing priorities', async () => {
 });
 
 test('orchestrator succeeds with decreasing priorities', async () => {
-  const orchestrator = new Orchestrator(
+  const orchestrator = createOrchestrator(null,
     new One({ priority: 3 }),
     new Two({ priority: 2 }),
     new Three({ priority: 1 }),
@@ -176,7 +216,7 @@ test('orchestrator succeeds with decreasing priorities', async () => {
 });
 
 test('orchestrator succeeds with mixed priorities', async () => {
-  const orchestrator = new Orchestrator(
+  const orchestrator = createOrchestrator(null,
     new One({ priority: 2 }),
     new Two({ priority: 1 }),
     new Three({ priority: 3 }),
@@ -190,7 +230,7 @@ test('orchestrator succeeds with mixed priorities', async () => {
   expect(result['3']).toBe(true);
   expect(result['4']).toBe(undefined);
 
-  const orchestrator2 = new Orchestrator(
+  const orchestrator2 = createOrchestrator(null,
     new One({ priority: 3 }),
     new Two({ priority: 1 }),
     new Three({ priority: 2 }),
@@ -206,7 +246,7 @@ test('orchestrator succeeds with mixed priorities', async () => {
 });
 
 test('orchestrator throws when component fails', async () => {
-  const orchestrator = new Orchestrator(
+  const orchestrator = createOrchestrator(null,
     new One(),
     new FailingTwo(),
     new Three(),
@@ -216,7 +256,11 @@ test('orchestrator throws when component fails', async () => {
 });
 
 test('orchestrator throws when run for a second time', async () => {
-  const orchestrator = new Orchestrator(new One(), new Two(), new Three());
+  const orchestrator = createOrchestrator(null,
+    new One(),
+    new Two(),
+    new Three(),
+  );
 
   orchestrator.run();
 
@@ -224,7 +268,11 @@ test('orchestrator throws when run for a second time', async () => {
 });
 
 test('orchestrator throws when run for a second time even if first time completed', async () => {
-  const orchestrator = new Orchestrator(new One(), new Two(), new Three());
+  const orchestrator = createOrchestrator(null,
+    new One(),
+    new Two(),
+    new Three(),
+  );
 
   await orchestrator.run();
 
@@ -232,7 +280,11 @@ test('orchestrator throws when run for a second time even if first time complete
 });
 
 test('orchestrator succeeds with an async component', async () => {
-  const orchestrator = new Orchestrator(new One(), new AsyncTwo(), new Three());
+  const orchestrator = createOrchestrator(null,
+    new One(),
+    new AsyncTwo(),
+    new Three(),
+  );
 
   const result = await orchestrator.run();
 
@@ -244,7 +296,7 @@ test('orchestrator succeeds with an async component', async () => {
 });
 
 test('orchestrator throws when async component fails', async () => {
-  const orchestrator = new Orchestrator(
+  const orchestrator = createOrchestrator(null,
     new One(),
     new FailingAsyncTwo(),
     new Three(),

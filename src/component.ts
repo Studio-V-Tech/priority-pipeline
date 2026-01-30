@@ -4,18 +4,21 @@ import type { ComponentInterface } from "./models";
 
 const DEFAULT_PRIORITY = 0;
 
-export abstract class Component<I, O> implements ComponentInterface<I, O> {
+export abstract class Component<I, O, S> implements ComponentInterface<I, O, S> {
+  declare readonly __input?: I;
+  declare readonly __output?: O;
+
   public readonly priority: number;
 
   protected readonly queue: O[] = [];
 
-  constructor({ priority = DEFAULT_PRIORITY }: { priority?: number }) {
-    this.priority = priority;
+  constructor({ priority }: { priority?: number } = {}) {
+    this.priority = priority ?? DEFAULT_PRIORITY;
   }
 
-  abstract isDone(ctx: { upstreamDone: boolean; upstreamCanGive: boolean }): boolean;
-  abstract canRun(ctx: { upstreamCanGive: boolean }): boolean;
-  abstract run(input: I | undefined, ctx: { upstreamDone: boolean }): void | Promise<void>;
+  abstract isDone(ctx: { upstreamDone: boolean; upstreamCanGive: boolean, state: S }): boolean;
+  abstract canRun(ctx: { upstreamCanGive: boolean, state: S }): boolean;
+  abstract run(input: I, ctx: { upstreamDone: boolean, state: S }): void | Promise<void>;
 
   canGive(): boolean {
     return this.queue.length > 0;
