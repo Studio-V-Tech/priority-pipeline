@@ -8,7 +8,7 @@ export interface ComponentInterface<I, O, S> {
     upstreamCanGive: boolean;
   }) => boolean;
 
-  readonly run: (input: I, ctx: {
+  readonly run: (input: I | undefined, ctx: {
     state: S;
     upstreamDone: boolean;
   }) => void | Promise<void>;

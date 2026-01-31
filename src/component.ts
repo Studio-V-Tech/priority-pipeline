@@ -18,7 +18,7 @@ export abstract class Component<I, O, S> implements ComponentInterface<I, O, S> 
 
   abstract isDone(ctx: { upstreamDone: boolean; upstreamCanGive: boolean, state: S }): boolean;
   abstract canRun(ctx: { upstreamCanGive: boolean, state: S }): boolean;
-  abstract run(input: I, ctx: { upstreamDone: boolean, state: S }): void | Promise<void>;
+  abstract run(input: I | undefined, ctx: { upstreamDone: boolean, state: S }): void | Promise<void>;
 
   canGive(): boolean {
     return this.queue.length > 0;
