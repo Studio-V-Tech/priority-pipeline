@@ -16,7 +16,7 @@ export interface ComponentInterface<I, O, S> {
 
   readonly canGive: () => boolean;
 
-  readonly give: () => O;
+  readonly give: () => O | undefined;
 
   readonly isDone: (ctx: {
     state: S;

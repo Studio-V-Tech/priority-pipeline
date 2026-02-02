@@ -1,5 +1,3 @@
-import { PipelineError } from "./error";
-
 import type { ComponentInterface } from "./models";
 
 const DEFAULT_PRIORITY = 0;
@@ -26,12 +24,7 @@ export abstract class Component<I, O, S> implements ComponentInterface<I, O, S> 
     return this.queue.length > 0;
   }
 
-  give(): O {
-    if (this.queue.length === 0) {
-      throw new PipelineError('COMPONENT_DONE_WITH_NOTHING_TO_GIVE');
-    }
-
-    // It is legitimate that O == undefined
-    return this.queue.shift() as O;
+  give(): O | undefined {
+    return this.queue.shift();
   }
 }
