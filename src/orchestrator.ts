@@ -90,6 +90,7 @@ class OrchestratorImpl<S, T extends NonEmpty<AnyComp<S>>> {
       cause: error,
       details: {
         componentIndex: this.getIndex(component),
+        componentName: component.name,
       }
     });
 

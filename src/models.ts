@@ -2,6 +2,7 @@ import { PipelineError } from "./error";
 
 export interface ComponentInterface<I, O, S> {
   readonly priority: number;
+  readonly name?: string;
 
   readonly canRun: (ctx: {
     state: S;

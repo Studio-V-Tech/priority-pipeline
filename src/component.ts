@@ -9,11 +9,13 @@ export abstract class Component<I, O, S> implements ComponentInterface<I, O, S> 
   declare readonly __output?: O;
 
   public readonly priority: number;
+  public readonly name?: string;
 
   protected readonly queue: O[] = [];
 
-  constructor({ priority }: { priority?: number } = {}) {
+  constructor({ priority, name }: { priority?: number; name?: string } = {}) {
     this.priority = priority ?? DEFAULT_PRIORITY;
+    this.name = name;
   }
 
   abstract isDone(ctx: { upstreamDone: boolean; upstreamCanGive: boolean, state: S }): boolean;
